@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>스도쿠</title>
+<style>
+  :root {
+    --bg: #f5f1e8; --surface: #fdfbf7; --text: #2c2825; --border: #c8c0b4;
+    --bold-border: #5c5346; --highlight: #ebe3d5; --selected: #d8ccb8;
+    --accent: #6b5b4b; --accent-text: #ffffff; --fixed: #2c2825;
+    --user: #3b6998; --error-bg: #f8d7da; --error-text: #b02a37; --memo: #6e665f;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Malgun Gothic", sans-serif; }
+  body {
+    background: var(--bg); color: var(--text); min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 16px; transition: background 0.2s, color 0.2s;
+  }
+  .top-bar {
+    width: 100%; max-width: 620px; display: flex; justify-content: space-between;
+    align-items: center; margin-bottom: 16px; gap: 8px;
+  }
+  select {
+    background: var(--surface); color: var(--text); border: 1px solid var(--border);
+    padding: 8px 12px; border-radius: 8px; font-size: 14px; cursor: pointer; outline: none;
+  }
+  .main {
+    display: flex; gap: 20px; align-items: flex-start; justify-content: center;
+    width: 100%; max-width: 620px;
+  }
+  .left-panel {
+    display: flex; flex-direction: column; gap: 12px; min-width: 110px;
+  }
+  .mistakes {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px; text-align: center; font-weight: 600; font-size: 15px;
+  }
+  .tools { display: flex; flex-direction: column; gap: 8px; }
+  button {
+    background: var(--surface); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 12px; font-size: 14px; font-weight: 500;
+    cursor: pointer; transition: 0.15s;
+  }
+  button:hover { background: var(--highlight); }
+  button.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  .center-panel { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  .board {
+    display: grid; grid-template-columns: repeat(9, 1fr);
+    width: min(88vw, 432px); height: min(88vw, 432px);
+    background: var(--surface); border: 2px solid var(--bold-border); border-radius: 6px; overflow: hidden;
+  }
+  .cell {
+    border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: clamp(18px, 4.5vw, 24px); cursor: pointer; user-select: none; position: relative;
+  }
+  .cell:nth-child(3n) { border-right: 2px solid var(--bold-border); }
+  .cell:nth-child(9n) { border-right: none; }
+  .cell.row-border { border-bottom: 2px solid var(--bold-border); }
+  .cell.highlight { background: var(--highlight); }
+  .cell.selected { background: var(--selected); }
+  .cell.fixed { font-weight: 700; color: var(--fixed); }
+  .cell.user { color: var(--user); font-weight: 500; }
+  .cell.error { background: var(--error-bg) !important; color: var(--error-text) !important; }
+  .memos {
+    display: grid; grid-template-columns: repeat(3, 1fr); width: 100%; height: 100%;
+    padding: 2px; font-size: clamp(8px, 2vw, 11px); color: var(--memo);
+  }
+  .memos span { display: flex; align-items: center; justify-content: center; line-height: 1; }
+  .numpad {
+    display: grid; grid-template-columns: repeat(9, 1fr); gap: 6px; width: min(88vw, 432px);
+  }
+  .numpad button { padding: 12px 0; font-size: 18px; font-weight: 600; text-align: center; }
+  .status-box {
+    width: 100%; max-width: 620px; margin-top: 14px; padding: 12px 16px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    font-size: 14px; min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  }
+  .restart-btn { padding: 6px 12px; font-size: 13px; background: var(--accent); color: var(--accent-text); border: none; }
+  .timer {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 12px; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums;
+  }
+  #fireworks {
+    position: fixed; inset: 0; pointer-events: none; z-index: 999;
+  }
+  @media (max-width: 580px) {
+    .main { flex-direction: column; align-items: center; }
+    .left-panel { width: min(88vw, 432px); flex-direction: row; align-items: center; }
+    .tools { flex-direction: row; flex: 1; }
+    .tools button { flex: 1; padding: 10px 4px; font-size: 13px; }
+  }
+</style>
+</head>
+<body>
+<canvas id="fireworks"></canvas>
+
+<div class="top-bar">
+  <select id="difficulty" aria-label="난이도 선택">
+    <option value="45">초급 (45개)</option>
+    <option value="36">중급 (36개)</option>
+    <option value="27">상급 (27개)</option>
+    <option value="24">어려움 (24개)</option>
+    <option value="19">극한 (19개)</option>
+  </select>
+  <div class="timer" id="timer">00:00</div>
+  <select id="theme" aria-label="테마 선택"></select>
+</div>
+
+<div class="main">
+  <div class="left-panel">
+    <div class="mistakes" id="mistakes">실수: 0 / 3</div>
+    <div class="tools">
+      <button id="btn-memo">메모</button>
+      <button id="btn-hint">힌트</button>
+      <button id="btn-undo">뒤로가기</button>
+      <button id="btn-erase">지우기</button>
+    </div>
+  </div>
+  <div class="center-panel">
+    <div class="board" id="board"></div>
+    <div class="numpad" id="numpad"></div>
+  </div>
+</div>
+
+<div class="status-box" id="status-box">
+  <span id="status-text">칸을 선택하고 숫자를 입력하세요.</span>
+</div>
+
+<script>
+const THEMES = {
+  "베이직 (기본)": { "--bg":"#f5f1e8","--surface":"#fdfbf7","--text":"#2c2825","--border":"#c8c0b4","--bold-border":"#5c5346","--highlight":"#ebe3d5","--selected":"#d8ccb8","--accent":"#6b5b4b","--accent-text":"#fff","--fixed":"#2c2825","--user":"#3b6998","--error-bg":"#f8d7da","--error-text":"#b02a37","--memo":"#6e665f" },
+  "다크 모드": { "--bg":"#18181b","--surface":"#27272a","--text":"#f4f4f5","--border":"#3f3f46","--bold-border":"#71717a","--highlight":"#323238","--selected":"#464650","--accent":"#a1a1aa","--accent-text":"#18181b","--fixed":"#f4f4f5","--user":"#60a5fa","--error-bg":"#451a1d","--error-text":"#f87171","--memo":"#a1a1aa" },
+  "웜그레이": { "--bg":"#ecebe9","--surface":"#f8f8f7","--text":"#333230","--border":"#c5c3bf","--bold-border":"#5a5855","--highlight":"#e0dfdc","--selected":"#ceccc7","--accent":"#5a5855","--accent-text":"#fff","--fixed":"#333230","--user":"#2b6cb0","--error-bg":"#fed7d7","--error-text":"#c53030","--memo":"#716f6c" },
+  "민트": { "--bg":"#eaf4f0","--surface":"#f7fcfa","--text":"#1e3a32","--border":"#b2d3c8","--bold-border":"#3b6e5e","--highlight":"#d8ece5","--selected":"#bce0d4","--accent":"#3b6e5e","--accent-text":"#fff","--fixed":"#1e3a32","--user":"#0d9488","--error-bg":"#fee2e2","--error-text":"#dc2626","--memo":"#5a7d72" },
+  "스카이": { "--bg":"#edf3f8","--surface":"#f8fbfe","--text":"#1e3448","--border":"#b6cde0","--bold-border":"#3c6487","--highlight":"#dce8f2","--selected":"#c2d8ea","--accent":"#3c6487","--accent-text":"#fff","--fixed":"#1e3448","--user":"#2563eb","--error-bg":"#fee2e2","--error-text":"#dc2626","--memo":"#5d7891" },
+  "라벤더": { "--bg":"#f2eff8","--surface":"#faf9fd","--text":"#2f2642","--border":"#c8bfe0","--bold-border":"#58477d","--highlight":"#e5dff2","--selected":"#d3c8ea","--accent":"#58477d","--accent-text":"#fff","--fixed":"#2f2642","--user":"#7c3aed","--error-bg":"#fee2e2","--error-text":"#dc2626","--memo":"#73668f" },
+  "피치": { "--bg":"#f9efe9","--surface":"#fefaf8","--text":"#42291f","--border":"#e0c4b6","--bold-border":"#87523c","--highlight":"#f2e0d6","--selected":"#e8cbbd","--accent":"#87523c","--accent-text":"#fff","--fixed":"#42291f","--user":"#d97706","--error-bg":"#fee2e2","--error-text":"#dc2626","--memo":"#8f6d5e" },
+  "세이지": { "--bg":"#eff2ec","--surface":"#f9fbf8","--text":"#283324","--border":"#c0cbb8","--bold-border":"#4c5e44","--highlight":"#e1e7dc","--selected":"#cdd7c5","--accent":"#4c5e44","--accent-text":"#fff","--fixed":"#283324","--user":"#4d7c0f","--error-bg":"#fee2e2","--error-text":"#dc2626","--memo":"#677561" },
+  "네이비": { "--bg":"#0f172a","--surface":"#1e293b","--text":"#f8fafc","--border":"#334155","--bold-border":"#64748b","--highlight":"#273549","--selected":"#384a63","--accent":"#38bdf8","--accent-text":"#0f172a","--fixed":"#f8fafc","--user":"#7dd3fc","--error-bg":"#450a0a","--error-text":"#f87171","--memo":"#94a3b8" },
+  "모노크롬": { "--bg":"#ffffff","--surface":"#ffffff","--text":"#111111","--border":"#cccccc","--bold-border":"#111111","--highlight":"#f0f0f0","--selected":"#dcdcdc","--accent":"#111111","--accent-text":"#ffffff","--fixed":"#111111","--user":"#444444","--error-bg":"#eeeeee","--error-text":"#000000","--memo":"#666666" }
+};
+
+let solution = [], puzzle = [], board = [], memos = [], history = [];
+let selected = null, mistakes = 0, memoMode = false, gameOver = false;
+let seconds = 0, timerId = null, fwAnimId = null;
+
+const $ = id => document.getElementById(id);
+
+// 테마 및 숫자 패드 초기화
+Object.keys(THEMES).forEach(name => {
+  const opt = document.createElement("option");
+  opt.value = name;
+  opt.textContent = name;
+  $("theme").appendChild(opt);
+});
+$("theme").onchange = e => {
+  const vars = THEMES[e.target.value];
+  for (const [k, v] of Object.entries(vars)) document.documentElement.style.setProperty(k, v);
+};
+
+for (let i = 1; i <= 9; i++) {
+  const btn = document.createElement("button");
+  btn.textContent = i;
+  btn.onclick = () => handleInput(i);
+  $("numpad").appendChild(btn);
+}
+
+// 스도쿠 생성 및 유일 해답 검증
+function isValid(grid, r, c, num) {
+  for (let i = 0; i < 9; i++) {
+    if (grid[r][i] === num || grid[i][c] === num) return false;
+  }
+  const br = Math.floor(r / 3) * 3, bc = Math.floor(c / 3) * 3;
+  for (let i = 0; i < 3; i++)
+    for (let j = 0; j < 3; j++)
+      if (grid[br + i][bc + j] === num) return false;
+  return true;
+}
+
+function solveGrid(grid, randomize = false) {
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      if (grid[r][c] === 0) {
+        const nums = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+        if (randomize) nums.sort(() => Math.random() - 0.5);
+        for (const n of nums) {
+          if (isValid(grid, r, c, n)) {
+            grid[r][c] = n;
+            if (solveGrid(grid, randomize)) return true;
+            grid[r][c] = 0;
+          }
+        }
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+function countSolutions(grid, limit = 2) {
+  let count = 0;
+  function backtrack() {
+    if (count >= limit) return;
+    let r = -1, c = -1;
+    for (let i = 0; i < 9 && r === -1; i++)
+      for (let j = 0; j < 9; j++)
+        if (grid[i][j] === 0) { r = i; c = j; break; }
+    if (r === -1) { count++; return; }
+    for (let n = 1; n <= 9; n++) {
+      if (isValid(grid, r, c, n)) {
+        grid[r][c] = n;
+        backtrack();
+        grid[r][c] = 0;
+        if (count >= limit) return;
+      }
+    }
+  }
+  backtrack();
+  return count;
+}
+
+function generateUniquePuzzle(clues) {
+  const sol = Array.from({ length: 9 }, () => Array(9).fill(0));
+  solveGrid(sol, true);
+  const puz = sol.map(r => [...r]);
+  const cells = Array.from({ length: 81 }, (_, i) => [Math.floor(i / 9), i % 9]).sort(() => Math.random() - 0.5);
+  let removed = 0;
+  const targetRemove = 81 - clues;
+
+  for (const [r, c] of cells) {
+    if (removed >= targetRemove) break;
+    const backup = puz[r][c];
+    puz[r][c] = 0;
+    if (countSolutions(puz.map(row => [...row]), 2) !== 1) {
+      puz[r][c] = backup;
+    } else {
+      removed++;
+    }
+  }
+  return { sol, puz };
+}
+
+function saveHistory() {
+  history.push({
+    board: board.map(r => [...r]),
+    memos: memos.map(r => r.map(s => new Set(s)))
+  });
+}
+
+function startNewGame() {
+  const clues = parseInt($("difficulty").value, 10);
+  stopTimer();
+  stopFireworks();
+  seconds = 0;
+  updateTimerDisplay();
+  setStatus("퍼즐 생성 중...");
+  setTimeout(() => {
+    const res = generateUniquePuzzle(clues);
+    solution = res.sol;
+    puzzle = res.puz;
+    board = puzzle.map(r => [...r]);
+    memos = Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => new Set()));
+    history = [];
+    selected = null;
+    mistakes = 0;
+    gameOver = false;
+    updateMistakes();
+    setStatus("칸을 선택하고 숫자를 입력하세요.");
+    startTimer();
+    render();
+  }, 20);
+}
+
+function formatTime(sec) {
+  const m = String(Math.floor(sec / 60)).padStart(2, "0");
+  const s = String(sec % 60).padStart(2, "0");
+  return `${m}:${s}`;
+}
+
+function updateTimerDisplay() {
+  $("timer").textContent = formatTime(seconds);
+}
+
+function startTimer() {
+  stopTimer();
+  timerId = setInterval(() => {
+    seconds++;
+    updateTimerDisplay();
+  }, 1000);
+}
+
+function stopTimer() {
+  if (timerId) { clearInterval(timerId); timerId = null; }
+}
+
+function launchFireworks() {
+  const canvas = $("fireworks");
+  const ctx = canvas.getContext("2d");
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  const particles = [];
+  const colors = ["#ff595e", "#ffca3a", "#8ac926", "#1982c4", "#6a4c93", "#ff924c"];
+  let bursts = 0;
+
+  function createBurst() {
+    const x = Math.random() * canvas.width * 0.8 + canvas.width * 0.1;
+    const y = Math.random() * canvas.height * 0.5 + canvas.height * 0.1;
+    const color = colors[Math.floor(Math.random() * colors.length)];
+    for (let i = 0; i < 45; i++) {
+      const angle = (Math.PI * 2 * i) / 45;
+      const speed = Math.random() * 4 + 2;
+      particles.push({
+        x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+        alpha: 1, color
+      });
+    }
+  }
+
+  createBurst();
+  const burstInterval = setInterval(() => {
+    bursts++;
+    createBurst();
+    if (bursts >= 6) clearInterval(burstInterval);
+  }, 400);
+
+  function animate() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vy += 0.06;
+      p.alpha -= 0.015;
+      if (p.alpha <= 0) { particles.splice(i, 1); continue; }
+      ctx.globalAlpha = p.alpha;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    if (particles.length > 0 || bursts < 6) {
+      fwAnimId = requestAnimationFrame(animate);
+    }
+  }
+  animate();
+}
+
+function stopFireworks() {
+  if (fwAnimId) { cancelAnimationFrame(fwAnimId); fwAnimId = null; }
+  const canvas = $("fireworks");
+  if (canvas) canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
+}
+
+function setStatus(msg, showRestart = false) {
+  const box = $("status-box");
+  box.innerHTML = `<span>${msg}</span>`;
+  if (showRestart) {
+    const btn = document.createElement("button");
+    btn.className = "restart-btn";
+    btn.textContent = "새 게임";
+    btn.onclick = startNewGame;
+    box.appendChild(btn);
+  }
+}
+
+function updateMistakes() {
+  $("mistakes").textContent = `실수: ${mistakes} / 3`;
+}
+
+function clearRelatedMemos(r, c, num) {
+  for (let i = 0; i < 9; i++) {
+    memos[r][i].delete(num);
+    memos[i][c].delete(num);
+  }
+  const br = Math.floor(r / 3) * 3, bc = Math.floor(c / 3) * 3;
+  for (let i = 0; i < 3; i++)
+    for (let j = 0; j < 3; j++)
+      memos[br + i][bc + j].delete(num);
+}
+
+function handleInput(num) {
+  if (gameOver || !selected) return;
+  const [r, c] = selected;
+  if (puzzle[r][c] !== 0 || board[r][c] === solution[r][c]) return;
+
+  saveHistory();
+
+  if (memoMode) {
+    if (board[r][c] !== 0) board[r][c] = 0;
+    if (memos[r][c].has(num)) memos[r][c].delete(num);
+    else memos[r][c].add(num);
+  } else {
+    memos[r][c].clear();
+    board[r][c] = num;
+    if (num === solution[r][c]) {
+      clearRelatedMemos(r, c, num);
+      checkWin();
+    } else {
+      mistakes++;
+      updateMistakes();
+      if (mistakes >= 3) {
+        gameOver = true;
+        stopTimer();
+        setStatus("실수 3회로 게임 오버되었습니다.", true);
+      }
+    }
+  }
+  render();
+}
+
+function checkWin() {
+  for (let r = 0; r < 9; r++)
+    for (let c = 0; c < 9; c++)
+      if (board[r][c] !== solution[r][c]) return;
+  gameOver = true;
+  stopTimer();
+  setStatus(`축하합니다! 스도쿠를 완성했습니다. (클리어 기록: ${formatTime(seconds)})`, true);
+  launchFireworks();
+}
+
+// 힌트: 가장 짧은 논리적 해설 탐색
+function giveHint() {
+  if (gameOver) return;
+  const cands = Array.from({ length: 9 }, (_, r) =>
+    Array.from({ length: 9 }, (_, c) => {
+      if (board[r][c] === solution[r][c]) return [];
+      const arr = [];
+      for (let n = 1; n <= 9; n++) if (isValidForBoard(r, c, n)) arr.push(n);
+      return arr;
+    })
+  );
+
+  // 1. Naked Single (마지막 남은 숫자)
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      if (cands[r][c].length === 1) {
+        const val = cands[r][c][0];
+        applyHint(r, c, val, `${r+1}행 ${c+1}열: 같은 행·열·박스에 나머지 숫자가 모두 있어 ${val}만 들어갈 수 있습니다.`);
+        return;
+      }
+    }
+  }
+
+  // 2. Hidden Single (행/열/박스 내 유일한 위치)
+  for (let n = 1; n <= 9; n++) {
+    for (let r = 0; r < 9; r++) {
+      const cols = [];
+      for (let c = 0; c < 9; c++) if (cands[r][c].includes(n)) cols.push(c);
+      if (cols.length === 1) {
+        applyHint(r, cols[0], n, `${r+1}행 ${cols[0]+1}열: ${r+1}행에서 숫자 ${n}이 들어갈 수 있는 유일한 칸입니다.`);
+        return;
+      }
+    }
+    for (let c = 0; c < 9; c++) {
+      const rows = [];
+      for (let r = 0; r < 9; r++) if (cands[r][c].includes(n)) rows.push(r);
+      if (rows.length === 1) {
+        applyHint(rows[0], c, n, `${rows[0]+1}행 ${c+1}열: ${c+1}열에서 숫자 ${n}이 들어갈 수 있는 유일한 칸입니다.`);
+        return;
+      }
+    }
+    for (let b = 0; b < 9; b++) {
+      const br = Math.floor(b / 3) * 3, bc = (b % 3) * 3, cells = [];
+      for (let i = 0; i < 3; i++)
+        for (let j = 0; j < 3; j++)
+          if (cands[br+i][bc+j].includes(n)) cells.push([br+i, bc+j]);
+      if (cells.length === 1) {
+        const [r, c] = cells[0];
+        applyHint(r, c, n, `${r+1}행 ${c+1}열: 해당 3×3 박스에서 숫자 ${n}이 들어갈 수 있는 유일한 칸입니다.`);
+        return;
+      }
+    }
+  }
+
+  // 3. 기본 폴백 (빈 칸 중 하나 채우기)
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      if (board[r][c] !== solution[r][c]) {
+        const val = solution[r][c];
+        applyHint(r, c, val, `${r+1}행 ${c+1}열: 전체 후보 소거에 의해 숫자 ${val}이 확정됩니다.`);
+        return;
+      }
+    }
+  }
+}
+
+function isValidForBoard(r, c, num) {
+  for (let i = 0; i < 9; i++) {
+    if (board[r][i] === solution[r][i] && board[r][i] === num) return false;
+    if (board[i][c] === solution[i][c] && board[i][c] === num) return false;
+  }
+  const br = Math.floor(r / 3) * 3, bc = Math.floor(c / 3) * 3;
+  for (let i = 0; i < 3; i++)
+    for (let j = 0; j < 3; j++)
+      if (board[br+i][bc+j] === solution[br+i][bc+j] && board[br+i][bc+j] === num) return false;
+  return true;
+}
+
+function applyHint(r, c, val, reason) {
+  saveHistory();
+  selected = [r, c];
+  memos[r][c].clear();
+  board[r][c] = val;
+  clearRelatedMemos(r, c, val);
+  setStatus(reason);
+  checkWin();
+  render();
+}
+
+function render() {
+  const boardEl = $("board");
+  boardEl.innerHTML = "";
+  const [sr, sc] = selected || [-1, -1];
+  const sBoxR = Math.floor(sr / 3), sBoxC = Math.floor(sc / 3);
+
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      const cell = document.createElement("div");
+      cell.className = "cell";
+      if (r === 2 || r === 5) cell.classList.add("row-border");
+
+      if (selected) {
+        if (r === sr && c === sc) cell.classList.add("selected");
+        else if (r === sr || c === sc || (Math.floor(r / 3) === sBoxR && Math.floor(c / 3) === sBoxC)) {
+          cell.classList.add("highlight");
+        }
+      }
+
+      const val = board[r][c];
+      if (puzzle[r][c] !== 0) {
+        cell.classList.add("fixed");
+        cell.textContent = val;
+      } else if (val !== 0) {
+        cell.classList.add("user");
+        if (val !== solution[r][c]) cell.classList.add("error");
+        cell.textContent = val;
+      } else if (memos[r][c].size > 0) {
+        const mGrid = document.createElement("div");
+        mGrid.className = "memos";
+        for (let n = 1; n <= 9; n++) {
+          const sp = document.createElement("span");
+          sp.textContent = memos[r][c].has(n) ? n : "";
+          mGrid.appendChild(sp);
+        }
+        cell.appendChild(mGrid);
+      }
+
+      cell.onclick = () => { selected = [r, c]; render(); };
+      boardEl.appendChild(cell);
+    }
+  }
+}
+
+// 버튼 및 키보드 이벤트
+$("difficulty").onchange = startNewGame;
+$("btn-memo").onclick = () => {
+  memoMode = !memoMode;
+  $("btn-memo").classList.toggle("active", memoMode);
+};
+$("btn-hint").onclick = giveHint;
+$("btn-undo").onclick = () => {
+  if (gameOver || history.length === 0) return;
+  const prev = history.pop();
+  board = prev.board;
+  memos = prev.memos;
+  render();
+};
+$("btn-erase").onclick = () => {
+  if (gameOver || !selected) return;
+  const [r, c] = selected;
+  if (puzzle[r][c] !== 0) return;
+  if (board[r][c] === 0 && memos[r][c].size === 0) return;
+  saveHistory();
+  board[r][c] = 0;
+  memos[r][c].clear();
+  render();
+};
+
+document.addEventListener("keydown", e => {
+  if (e.key >= "1" && e.key <= "9") {
+    handleInput(parseInt(e.key, 10));
+  } else if (e.key === "Shift") {
+    $("btn-memo").click();
+  } else if (e.key === "Backspace") {
+    $("btn-erase").click();
+  } else if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+    e.preventDefault();
+    if (!selected) {
+      selected = [0, 0];
+    } else {
+      let [r, c] = selected;
+      if (e.key === "ArrowUp") r = (r + 8) % 9;
+      if (e.key === "ArrowDown") r = (r + 1) % 9;
+      if (e.key === "ArrowLeft") c = (c + 8) % 9;
+      if (e.key === "ArrowRight") c = (c + 1) % 9;
+      selected = [r, c];
+    }
+    render();
+  }
+});
+
+startNewGame();
+</script>
+</body>
+</html>
